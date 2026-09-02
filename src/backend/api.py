@@ -85,7 +85,12 @@ def list_documents(
     add_in(subjects, "subject")
     add_in(cities, "city")
     add_in(exams, "exam")
-    add_in(paper_type, "paper_type")
+    paper_values = _split_values(paper_type)
+    if paper_values:
+        if "试卷" in paper_values or "答案" in paper_values:
+            paper_values = list(dict.fromkeys([*paper_values, "试卷+答案"]))
+        clauses.append(f"paper_type IN ({', '.join('?' * len(paper_values))})")
+        params.extend(paper_values)
     if classified == "yes":
         clauses.append("is_classified = 1")
     elif classified == "no":
