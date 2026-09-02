@@ -3,6 +3,12 @@ set -e
 
 cd /workdir
 
+# 更新代码（如果可访问 git）
+if [ -d .git ] && git status &> /dev/null; then
+    echo "Updating code..."
+    git pull || true
+fi
+
 PIP_MIRROR="${PIP_MIRROR:-https://mirrors.aliyun.com/pypi/simple/}"
 
 # ---- Python 依赖 ----
