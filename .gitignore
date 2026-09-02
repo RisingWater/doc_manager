@@ -1,0 +1,24 @@
+# Python
+venv/
+__pycache__/
+*.py[cod]
+
+# 数据目录
+data/
+uploads/
+
+# 前端
+src/frontend/node_modules/
+src/frontend/dist/
+
+# 日志
+*.log
+uvicorn.out.log
+uvicorn.err.log
+
+# 系统 / IDE
+Thumbs.db
+desktop.ini
+.DS_Store
+.idea/
+.vscode/

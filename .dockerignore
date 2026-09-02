@@ -1,0 +1,9 @@
+venv/
+data/
+uploads/
+src/frontend/node_modules/
+src/frontend/dist/
+**/__pycache__/
+*.log
+uvicorn.out.log
+uvicorn.err.log
