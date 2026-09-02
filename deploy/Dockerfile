@@ -14,6 +14,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     locales \
     && rm -rf /var/lib/apt/lists/*
 
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    sudo git curl vim \
+    && rm -rf /var/lib/apt/lists/*
+
 # 中文 locale（文件名含中文，必须 UTF-8）
 RUN locale-gen zh_CN.UTF-8 && update-locale LANG=zh_CN.UTF-8
 ENV LANG=zh_CN.UTF-8
@@ -26,6 +30,9 @@ ENV PATH="/usr/local/bin:${PATH}"
 
 # 非 root 用户（上传文件、数据库落盘都用该 UID，避免 root 权限问题）
 RUN useradd -m -u $UID appuser
+
+RUN git config --global --add safe.directory "*"
+RUN git config --global --add safe.directory /workdir
 
 WORKDIR /workdir
 
