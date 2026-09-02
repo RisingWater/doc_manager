@@ -23,6 +23,7 @@ docker run -d \
     -p ${HOST_PORT}:8000 \
     -e SCAN_INTERVAL_MINUTES="${SCAN_INTERVAL_MINUTES:-30}" \
     -v "$(pwd)":/workdir \
+    -v /vol1/1002/乔宝卷子:/data \
     $IMAGE
 
 docker ps -f name=^${NAME}$
