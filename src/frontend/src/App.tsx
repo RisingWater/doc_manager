@@ -7,8 +7,10 @@ import {
   Card,
   Form,
   Input,
+  InputNumber,
   Layout,
   Modal,
+  Radio,
   Select,
   Space,
   Table,
@@ -18,8 +20,10 @@ import {
   Upload,
 } from 'antd'
 import {
+  CheckOutlined,
   ClearOutlined,
   DownloadOutlined,
+  EditOutlined,
   FileTextOutlined,
   ReloadOutlined,
   ScanOutlined,
@@ -39,10 +43,24 @@ interface FilterState {
   exams: string[]
   paperTypes: string[]
   classified: string
+  done: string
+  scoreOp: string
+  scoreValue: string
   q: string
 }
 
-const EMPTY_FILTERS: FilterState = { years: [], subjects: [], cities: [], exams: [], paperTypes: [], classified: '', q: '' }
+const EMPTY_FILTERS: FilterState = {
+  years: [], subjects: [], cities: [], exams: [], paperTypes: [], classified: '',
+  done: '', scoreOp: '', scoreValue: '', q: '',
+}
+
+const SCORE_OP_OPTIONS = [
+  { label: '大于', value: 'gt' },
+  { label: '大于等于', value: 'gte' },
+  { label: '等于', value: 'eq' },
+  { label: '小于等于', value: 'lte' },
+  { label: '小于', value: 'lt' },
+]
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -62,10 +80,16 @@ function toOpts(list: OptionItem[]) {
   return list.map((o) => ({ label: `${o.value} (${o.count})`, value: o.value }))
 }
 
+function fmtScore(score: number | null): string {
+  if (score == null) return '-'
+  return Number.isInteger(score) ? String(score) : score.toFixed(1)
+}
+
 export default function App() {
   const { message } = AntdApp.useApp()
   const [options, setOptions] = useState<MetaOptions>({
-    years: [], subjects: [], cities: [], exams: [], paper_types: [], total: 0, classified: 0,
+    years: [], subjects: [], cities: [], exams: [], paper_types: [],
+    total: 0, classified: 0, done: 0, scored: 0, avg_score: null,
   })
   const [filters, setFilters] = useState<FilterState>({ ...EMPTY_FILTERS })
   const [docs, setDocs] = useState<DocItem[]>([])
@@ -83,6 +107,10 @@ export default function App() {
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [uploadForm] = Form.useForm()
+  const [progressDoc, setProgressDoc] = useState<DocItem | null>(null)
+  const [progressDone, setProgressDone] = useState(true)
+  const [progressScore, setProgressScore] = useState<number | null>(null)
+  const [savingProgress, setSavingProgress] = useState(false)
 
   const loadOptions = useCallback(async () => {
     try {
@@ -95,7 +123,21 @@ export default function App() {
   const loadDocs = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await api.documents({ ...filters, paper_type: filters.paperTypes, page, pageSize, sort })
+      const res = await api.documents({
+        years: filters.years,
+        subjects: filters.subjects,
+        cities: filters.cities,
+        exams: filters.exams,
+        paper_type: filters.paperTypes,
+        classified: filters.classified,
+        done: filters.done,
+        score_op: filters.scoreOp,
+        score_value: filters.scoreValue,
+        q: filters.q,
+        page,
+        pageSize,
+        sort,
+      })
       setDocs(res.items)
       setTotal(res.total)
     } catch (e) {
@@ -199,6 +241,54 @@ export default function App() {
       })
   }
 
+  const markSelected = async (done: boolean) => {
+    if (selectedIds.length === 0) return
+    try {
+      const res = await api.markDocuments(selectedIds.map(Number), done)
+      message.success(`已标记${done ? '已做' : '未做'} ${res.updated} 个文件`)
+      setSelectedIds([])
+      await Promise.all([loadOptions(), loadDocsRef.current()])
+    } catch (e) {
+      message.error(`标记失败：${String(e)}`)
+    }
+  }
+
+  const markSelectedUndone = () => {
+    if (selectedIds.length === 0) return
+    Modal.confirm({
+      title: `将 ${selectedIds.length} 个文件标记为未做？`,
+      content: '已记录的分数会一并清空',
+      okText: '标记未做',
+      cancelText: '取消',
+      okButtonProps: { danger: true },
+      onOk: () => markSelected(false),
+    })
+  }
+
+  const openProgress = (doc: DocItem) => {
+    setProgressDoc(doc)
+    setProgressDone(doc.done)
+    setProgressScore(doc.score)
+  }
+
+  const saveProgress = async () => {
+    if (!progressDoc) return
+    setSavingProgress(true)
+    try {
+      await api.updateProgress(progressDoc.id, {
+        done: progressDone,
+        score: progressDone ? progressScore : null,
+      })
+      message.success('已保存')
+      setProgressDoc(null)
+      await Promise.all([loadOptions(), loadDocsRef.current()])
+    } catch (e) {
+      message.error(`保存失败：${String(e)}`)
+    } finally {
+      setSavingProgress(false)
+    }
+  }
+
   const defaultUploadDir = () => {
     const uploads = dirs.find((d) => /uploads\\?\/?$/i.test(d.path.replace(/\\/g, '/')))
     return uploads?.path ?? dirs[0]?.path ?? ''
@@ -266,6 +356,26 @@ export default function App() {
       ),
     },
     {
+      title: '做题',
+      dataIndex: 'done',
+      width: 80,
+      render: (v: boolean, r) =>
+        v ? (
+          <Tooltip title={r.done_at ? `记录于 ${dayjs(r.done_at).format('YYYY-MM-DD HH:mm')}` : undefined}>
+            <Tag color="success" style={{ cursor: 'default' }}>已做</Tag>
+          </Tooltip>
+        ) : (
+          <Tag style={{ cursor: 'default' }}>未做</Tag>
+        ),
+    },
+    {
+      title: '成绩',
+      dataIndex: 'score',
+      width: 80,
+      sorter: true,
+      render: (v: number | null) => fmtScore(v),
+    },
+    {
       title: '分类状态',
       dataIndex: 'is_classified',
       width: 100,
@@ -289,12 +399,17 @@ export default function App() {
     {
       title: '操作',
       key: 'action',
-      width: 90,
+      width: 150,
       fixed: 'right',
       render: (_, r) => (
-        <Button type="link" size="small" icon={<DownloadOutlined />} onClick={() => downloadDoc(r.id)}>
-          下载
-        </Button>
+        <Space size={0}>
+          <Button type="link" size="small" icon={<DownloadOutlined />} onClick={() => downloadDoc(r.id)}>
+            下载
+          </Button>
+          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openProgress(r)}>
+            记录
+          </Button>
+        </Space>
       ),
     },
   ]
@@ -397,6 +512,39 @@ export default function App() {
                 value={filters.classified}
                 onChange={(v) => updateFilter('classified', v ?? '')}
               />
+              <Select
+                placeholder="做题状态"
+                style={{ minWidth: 120 }}
+                allowClear
+                options={[
+                  { label: `已做 (${options.done})`, value: 'yes' },
+                  { label: `未做 (${options.total - options.done})`, value: 'no' },
+                ]}
+                value={filters.done || undefined}
+                onChange={(v) => updateFilter('done', v ?? '')}
+              />
+              <Space.Compact>
+                <Select
+                  placeholder="成绩"
+                  style={{ width: 110 }}
+                  allowClear
+                  options={SCORE_OP_OPTIONS}
+                  value={filters.scoreOp || undefined}
+                  onChange={(v) => {
+                    setPage(1)
+                    setFilters((f) => ({ ...f, scoreOp: v ?? '', scoreValue: v ? f.scoreValue : '' }))
+                  }}
+                />
+                <InputNumber
+                  placeholder="分数"
+                  style={{ width: 90 }}
+                  min={0}
+                  max={1000}
+                  controls={false}
+                  value={filters.scoreValue === '' ? null : Number(filters.scoreValue)}
+                  onChange={(v) => updateFilter('scoreValue', v == null ? '' : String(v))}
+                />
+              </Space.Compact>
             </Space>
             <Space wrap style={{ marginBottom: 16 }}>
               <Input.Search
@@ -425,9 +573,15 @@ export default function App() {
                 上传文档
               </Button>
               {selectedIds.length > 0 && (
-                <Button type="primary" icon={<DownloadOutlined />} onClick={handleBatchDownload}>
-                  批量下载 ({selectedIds.length})
-                </Button>
+                <>
+                  <Button icon={<CheckOutlined />} onClick={() => markSelected(true)}>
+                    标记已做
+                  </Button>
+                  <Button onClick={markSelectedUndone}>标记未做</Button>
+                  <Button type="primary" icon={<DownloadOutlined />} onClick={handleBatchDownload}>
+                    批量下载 ({selectedIds.length})
+                  </Button>
+                </>
               )}
             </Space>
             <Table<DocItem>
@@ -456,8 +610,9 @@ export default function App() {
                 if (!s?.order) return
                 if (s.field === 'mtime') setSort(s.order === 'ascend' ? 'mtime_asc' : 'mtime_desc')
                 if (s.field === 'file_name') setSort(s.order === 'ascend' ? 'name_asc' : 'name_desc')
+                if (s.field === 'score') setSort(s.order === 'ascend' ? 'score_asc' : 'score_desc')
               }}
-              scroll={{ x: 1100 }}
+              scroll={{ x: 1450 }}
             />
           </Card>
         </div>
@@ -503,6 +658,49 @@ export default function App() {
             <Typography.Text type="secondary">上传进度：{uploadProgress}%</Typography.Text>
           )}
         </Form>
+      </Modal>
+      <Modal
+        title="做题记录"
+        open={progressDoc !== null}
+        onOk={saveProgress}
+        onCancel={() => !savingProgress && setProgressDoc(null)}
+        confirmLoading={savingProgress}
+        okText="保存"
+        cancelText="取消"
+        maskClosable={false}
+        width={380}
+      >
+        {progressDoc && (
+          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+            <Radio.Group
+              optionType="button"
+              buttonStyle="solid"
+              value={progressDone ? 'yes' : 'no'}
+              onChange={(e) => setProgressDone(e.target.value === 'yes')}
+              options={[
+                { label: '未做', value: 'no' },
+                { label: '已做', value: 'yes' },
+              ]}
+            />
+            <InputNumber
+              style={{ width: '100%' }}
+              min={0}
+              max={1000}
+              placeholder="分数"
+              disabled={!progressDone}
+              value={progressDone ? progressScore : null}
+              onChange={(v) => setProgressScore(v ?? null)}
+            />
+            <Typography.Text type="secondary" ellipsis={{ tooltip: progressDoc.path }}>
+              {progressDoc.file_name}
+            </Typography.Text>
+            {progressDoc.done_at && (
+              <Typography.Text type="secondary">
+                记录时间 {dayjs(progressDoc.done_at).format('YYYY-MM-DD HH:mm')}
+              </Typography.Text>
+            )}
+          </Space>
+        )}
       </Modal>
     </Layout>
   )

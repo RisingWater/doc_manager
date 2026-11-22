@@ -19,6 +19,9 @@ CREATE TABLE IF NOT EXISTS documents (
     paper_type TEXT NOT NULL DEFAULT '试卷',
     is_classified INTEGER NOT NULL DEFAULT 0,
     missing_dims TEXT NOT NULL DEFAULT '[]',
+    done INTEGER NOT NULL DEFAULT 0,
+    done_at TEXT,
+    score REAL,
     first_seen_at TEXT NOT NULL,
     last_seen_at TEXT NOT NULL
 );
@@ -57,9 +60,17 @@ def init_db() -> None:
     try:
         conn.executescript(SCHEMA)
         cols = [r[1] for r in conn.execute("PRAGMA table_info(documents)")]
-        if "paper_type" not in cols:
-            conn.execute("ALTER TABLE documents ADD COLUMN paper_type TEXT NOT NULL DEFAULT '试卷'")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_documents_paper_type ON documents(paper_type)")
+        migrations = {
+            "paper_type": "ALTER TABLE documents ADD COLUMN paper_type TEXT NOT NULL DEFAULT '试卷'",
+            "done": "ALTER TABLE documents ADD COLUMN done INTEGER NOT NULL DEFAULT 0",
+            "done_at": "ALTER TABLE documents ADD COLUMN done_at TEXT",
+            "score": "ALTER TABLE documents ADD COLUMN score REAL",
+        }
+        for col, sql in migrations.items():
+            if col not in cols:
+                conn.execute(sql)
+        for col in ("paper_type", "done", "score"):
+            conn.execute(f"CREATE INDEX IF NOT EXISTS idx_documents_{col} ON documents({col})")
         conn.commit()
     finally:
         conn.close()

@@ -13,6 +13,9 @@ export interface DocItem {
   paper_type: string
   is_classified: boolean
   missing_dims: string[]
+  done: boolean
+  done_at: string | null
+  score: number | null
 }
 
 export interface OptionItem {
@@ -28,6 +31,9 @@ export interface MetaOptions {
   paper_types: OptionItem[]
   total: number
   classified: number
+  done: number
+  scored: number
+  avg_score: number | null
 }
 
 export interface ScanLog {
@@ -49,6 +55,9 @@ export interface DocQuery {
   exams?: string[]
   paper_type?: string[]
   classified?: string
+  done?: string
+  score_op?: string
+  score_value?: string
   q?: string
   sort?: string
   page: number
@@ -101,6 +110,23 @@ export const api = {
     http<{ ok: boolean; scan_id?: number; message?: string }>('/api/scan', { method: 'POST' }),
 
   dirs: () => http<DirInfo[]>('/api/dirs'),
+
+  updateProgress: (id: number, payload: { done?: boolean; score?: number | null }) =>
+    http<{ id: number; done: boolean; done_at: string | null; score: number | null }>(
+      `/api/documents/${id}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      },
+    ),
+
+  markDocuments: (ids: number[], done: boolean) =>
+    http<{ ok: boolean; updated: number }>('/api/documents/mark', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids, done }),
+    }),
 }
 
 export function downloadDoc(id: number) {

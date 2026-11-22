@@ -22,8 +22,11 @@ GET /api/documents
 | `exams` | 逗号分隔字符串 | 考试，如 `一检,中考` |
 | `paper_type` | 逗号分隔字符串 | 试卷/答案：`试卷`、`答案`、`试卷+答案` |
 | `classified` | 字符串 | `yes`=已分类，`no`=未分类，空=全部 |
+| `done` | 字符串 | `yes`=已做，`no`=未做，空=全部 |
+| `score_op` | 字符串 | 成绩比较方式：`gt`(>) / `gte`(>=) / `eq`(=) / `lte`(<=) / `lt`(<) |
+| `score_value` | 数字 | 与 `score_op` 配合使用的分数；**没有成绩的文档始终满足该条件** |
 | `q` | 字符串 | 模糊搜索关键字，匹配文件名/路径/所有分类字段，如 `q=中考数学` |
-| `sort` | 字符串 | `mtime_desc`(默认) / `mtime_asc` / `name_asc` / `name_desc` |
+| `sort` | 字符串 | `mtime_desc`(默认) / `mtime_asc` / `name_asc` / `name_desc` / `score_desc` / `score_asc` |
 | `page` | 整数 | 页码，默认 1 |
 | `page_size` | 整数 | 每页数量，默认 20，最大 100 |
 
@@ -51,13 +54,17 @@ GET /api/documents
       "exam": "一检",
       "paper_type": "试卷",
       "is_classified": true,
-      "missing_dims": []
+      "missing_dims": [],
+      "done": true,
+      "done_at": "2026-11-22T17:27:35",
+      "score": 88.0
     }
   ]
 }
 ```
 
 `missing_dims`：未分类时缺失的维度，取值 `year` / `subject` / `city` / `exam`。
+`done`：是否做过；`done_at`：标记已做的时间（未做时为 `null`）；`score`：得分，可为 `null`（做过但没记分，或没做过）。
 
 ### 示例
 
@@ -67,6 +74,12 @@ GET /api/documents?years=2023&subjects=数学&paper_type=答案&q=厦门&page=1&
 
 # 只看未分类的文件
 GET /api/documents?classified=no
+
+# 做过、且成绩大于 90 分的（做过但没记分的也会返回）
+GET /api/documents?done=yes&score_op=gt&score_value=90
+
+# 成绩小于 90 分的（没有成绩的也返回）
+GET /api/documents?score_op=lt&score_value=90
 ```
 
 > 中文参数直接使用 UTF-8 URL 编码即可（如 `%E6%95%B0%E5%AD%A6` = 数学）。
@@ -89,9 +102,14 @@ GET /api/meta/options
   "exams":       [{ "value": "一检", "count": 92 }],
   "paper_types": [{ "value": "试卷", "count": 328 }, { "value": "答案", "count": 219 }, { "value": "试卷+答案", "count": 206 }],
   "total": 753,
-  "classified": 752
+  "classified": 752,
+  "done": 12,
+  "scored": 9,
+  "avg_score": 86.4
 }
 ```
+
+`done`：已做的文档数；`scored`：有成绩的文档数；`avg_score`：已记分文档的平均分（没有成绩时为 `null`）。
 
 ---
 
@@ -152,6 +170,43 @@ curl -X POST "http://127.0.0.1:8000/api/upload" \
   -F "city=福州市" \
   -F "exam=一检"
 ```
+
+---
+
+## 5. 记录做题状态与成绩
+
+```
+PATCH /api/documents/{id}
+Content-Type: application/json
+```
+
+请求体（字段都可选，只传要改的）：
+
+```json
+{ "done": true, "score": 88 }
+```
+
+- `score` 非空时自动把文档标记为已做；`done=false` 会清空成绩和标记时间。
+- `score` 范围 0 ~ 1000，超出返回 400。
+
+响应：
+
+```json
+{ "id": 1, "done": true, "done_at": "2026-11-22T17:27:35", "score": 88.0 }
+```
+
+### 批量标记
+
+```
+POST /api/documents/mark
+Content-Type: application/json
+```
+
+```json
+{ "ids": [1, 2, 3], "done": false }
+```
+
+`done=false` 会把这些文档的成绩一并清空。响应：`{ "ok": true, "updated": 3 }`。
 
 ---
 
